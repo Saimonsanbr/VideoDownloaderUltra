@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/Saimonsanbr/VideoDownloaderUltra/internal/api"
@@ -29,6 +30,7 @@ func RunGUI() {
 	mux.HandleFunc("/", serveHTML)
 	mux.HandleFunc("/api/info", handleInfo)
 	mux.HandleFunc("/api/download", handleDownload)
+	mux.HandleFunc("/api/pick-folder", handlePickFolder)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	url := "http://" + addr + "/"
@@ -67,10 +69,10 @@ button:disabled{background:#555;cursor:not-allowed}
 <p style="text-align:center;color:#888;font-size:12px">Teste pessoal - API terceiros não oficial, pode parar a qualquer momento. Baixe apenas com permissão.</p>
 <label>Link do vídeo:</label>
 <input id="url" placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/...">
-<label>Pasta de downloads:</label>
+<label>Pasta de downloads (clique em Escolher para abrir Finder/Explorer):</label>
 <div class="row">
-<input id="folder" placeholder="vazio = pasta onde o programa foi aberto" value=".">
-<button onclick="pickFolder()">Escolher</button>
+<input id="folder" placeholder="vazio = pasta onde o programa foi aberto" value="." readonly style="cursor:pointer" onclick="pickFolder()" title="Clique em Escolher para abrir o seletor nativo">
+<button onclick="pickFolder()">Escolher pasta</button>
 </div>
 <button id="btn" onclick="baixar()">Baixar</button>
 <div id="progress"><div id="bar"></div></div>
@@ -81,8 +83,23 @@ function log(m){const e=document.getElementById('logs');e.textContent+=m+"\\n";e
 function setStatus(s){document.getElementById('status').textContent=s}
 function setProgress(p){document.getElementById('bar').style.width=p+"%"}
 async function pickFolder(){
+  try{
+    setStatus("Abrindo Finder/Explorer...");
+    const r=await fetch("/api/pick-folder",{method:"POST"});
+    const j=await r.json();
+    if(j.path){
+      document.getElementById('folder').value=j.path;
+      log("Pasta escolhida: "+j.path);
+      setStatus("Pasta: "+j.path);
+      return;
+    }
+    if(j.error) throw new Error(j.error);
+  }catch(e){
+    log("Dialog nativo falhou: "+e.message+" - usando prompt manual");
+  }
   const f=prompt("Digite o caminho da pasta (ou deixe . para pasta atual):", document.getElementById('folder').value);
   if(f!==null) document.getElementById('folder').value=f;
+  setStatus("Aguardando...");
 }
 async function baixar(){
   const url=document.getElementById('url').value.trim();
@@ -220,6 +237,66 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	send(map[string]string{"type": "done", "file": dest})
+}
+
+func handlePickFolder(w http.ResponseWriter, r *http.Request) {
+	path, err := pickFolderNative()
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"path": path})
+}
+
+func pickFolderNative() (string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		// Finder nativo via AppleScript
+		out, err := exec.Command("osascript", "-e", `POSIX path of (choose folder with prompt "Escolha a pasta de downloads")`).Output()
+		if err != nil {
+			return "", fmt.Errorf("Finder cancelado ou erro: %w", err)
+		}
+		s := strings.TrimSpace(string(out))
+		// osascript retorna com / no final, mantém
+		return s, nil
+	case "windows":
+		// Explorer nativo via PowerShell FolderBrowserDialog
+		ps := `Add-Type -AssemblyName System.Windows.Forms; $f=New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description="Escolha a pasta de downloads"; $f.ShowNewFolderButton=$true; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){Write-Output $f.SelectedPath} else { exit 1 }`
+		out, err := exec.Command("powershell", "-NoProfile", "-Command", ps).Output()
+		if err != nil {
+			return "", fmt.Errorf("Explorer cancelado ou erro: %w", err)
+		}
+		s := strings.TrimSpace(string(out))
+		if s == "" {
+			return "", fmt.Errorf("nenhuma pasta escolhida")
+		}
+		return s, nil
+	default:
+		// Linux Debian 13: tenta zenity, kdialog, yad nessa ordem
+		if _, err := exec.LookPath("zenity"); err == nil {
+			out, err := exec.Command("zenity", "--file-selection", "--directory", "--title=Escolha a pasta de downloads").Output()
+			if err != nil {
+				return "", fmt.Errorf("zenity cancelado")
+			}
+			return strings.TrimSpace(string(out)), nil
+		}
+		if _, err := exec.LookPath("kdialog"); err == nil {
+			out, err := exec.Command("kdialog", "--getexistingdirectory", ".", "--title", "Escolha a pasta").Output()
+			if err != nil {
+				return "", fmt.Errorf("kdialog cancelado")
+			}
+			return strings.TrimSpace(string(out)), nil
+		}
+		if _, err := exec.LookPath("yad"); err == nil {
+			out, err := exec.Command("yad", "--file", "--directory", "--title=Escolha a pasta").Output()
+			if err != nil {
+				return "", fmt.Errorf("yad cancelado")
+			}
+			return strings.TrimSpace(string(out)), nil
+		}
+		return "", fmt.Errorf("nenhum dialog nativo encontrado (instale zenity: sudo apt install zenity)")
+	}
 }
 
 func openBrowser(url string) {
