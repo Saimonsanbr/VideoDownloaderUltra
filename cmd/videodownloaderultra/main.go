@@ -61,12 +61,22 @@ func main() {
 			}
 		}
 	}
+	if help {
+		printHelp()
+		return
+	}
 	// fallback para flag package se não achou url (compat)
 	if url == "" {
 		flag.StringVar(&outDir, "o", ".", "")
 		flag.IntVar(&quality, "q", 1080, "")
 		flag.BoolVar(&listOnly, "list", false, "")
+		flag.BoolVar(&help, "h", false, "")
+		flag.BoolVar(&help, "help", false, "")
 		flag.Parse()
+		if help {
+			printHelp()
+			return
+		}
 		if len(flag.Args()) > 0 {
 			url = flag.Args()[0]
 		}
