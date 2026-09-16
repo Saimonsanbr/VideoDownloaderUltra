@@ -1,0 +1,14 @@
+/videodownloaderultra
+/videodownloaderultra.exe
+/videodownloaderultra-darwin-*
+/videodownloaderultra-linux-*
+/videodownloaderultra-windows-*
+*.mp4
+*.webm
+*.m4a
+*.weba
+/tmp/
+bin/
+dist/
+.DS_Store
+*.app
