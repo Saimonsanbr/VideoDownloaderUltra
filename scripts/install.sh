@@ -67,7 +67,7 @@ if [ "$OS" = "linux" ]; then
   cat > "$DESKTOP_DIR/videodownloaderultra.desktop" <<EOF
 [Desktop Entry]
 Name=VideoDownloaderUltra
-Comment=Downloader de vídeo (teste API terceiros)
+Comment=Downloader de vídeo (teste API terceiros - video-only)
 Exec=$INSTALL_DIR/$BIN --gui
 Icon=video-display
 Terminal=false
@@ -75,6 +75,39 @@ Type=Application
 Categories=AudioVideo;Network;
 EOF
   echo "Desktop entry criado em $DESKTOP_DIR/videodownloaderultra.desktop"
+  # atualiza cache
+  update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+fi
+
+# .app para macOS (pesquisável no Spotlight/Launchpad)
+if [ "$OS" = "darwin" ]; then
+  APP_DIR="/Applications/VideoDownloaderUltra.app"
+  # se não tem permissão em /Applications, usa ~/Applications
+  if [ ! -w "/Applications" ]; then
+    APP_DIR="$HOME/Applications/VideoDownloaderUltra.app"
+  fi
+  mkdir -p "$APP_DIR/Contents/MacOS"
+  cat > "$APP_DIR/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>VideoDownloaderUltra</string>
+  <key>CFBundleDisplayName</key><string>VideoDownloaderUltra</string>
+  <key>CFBundleIdentifier</key><string>com.videodownloaderultra.app</string>
+  <key>CFBundleVersion</key><string>1.0</string>
+  <key>CFBundleExecutable</key><string>VideoDownloaderUltra</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+</dict>
+</plist>
+EOF
+  cat > "$APP_DIR/Contents/MacOS/VideoDownloaderUltra" <<EOF
+#!/bin/sh
+exec "$INSTALL_DIR/$BIN" --gui
+EOF
+  chmod +x "$APP_DIR/Contents/MacOS/VideoDownloaderUltra"
+  echo "App criado em $APP_DIR (pesquise VideoDownloaderUltra no Spotlight)"
+  echo "Se bloqueado: xattr -cr \"$APP_DIR\" && open \"$APP_DIR\""
 fi
 
 echo ""
